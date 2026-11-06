@@ -72,7 +72,7 @@ html[data-sf-enabled] [data-sf-recommendation],
 html[data-sf-enabled] [data-sf-history],
 html[data-sf-enabled]:not([data-sf-page="playlist"]) [data-testid="recommended-track"] { display: none !important; }
 
-/* Keep the native search field, account menu, and their actual event handlers. */
+/* Keep the native search field and its actual event handlers. */
 html[data-sf-enabled] [data-testid="global-nav-bar"] {
   grid-area: global-nav !important;
   display: flex !important;
@@ -319,3 +319,11 @@ html[data-sf-enabled] .sf-status { position: fixed; bottom: 106px; left: 50%; tr
 .sf-import-link { color: inherit; font: inherit; border: 0; background: transparent; cursor: pointer; text-align: left; width: 100%; }
 html[data-sf-enabled][data-sf-local-player] [data-sf-player] { visibility: hidden; }
 .sf-local-bar { grid-area: now-playing-bar; }
+
+html[data-sf-enabled] [data-sf-account-wrap],
+html[data-sf-enabled] [data-testid="user-widget-link"] { display:none !important; }
+html[data-sf-enabled], html[data-sf-enabled] * { scrollbar-color:transparent transparent !important; }
+html[data-sf-enabled] *::-webkit-scrollbar,
+html[data-sf-enabled] *::-webkit-scrollbar-thumb,
+html[data-sf-enabled] *::-webkit-scrollbar-track { background:transparent !important; }
+html[data-sf-enabled] .os-scrollbar { opacity:0 !important; }

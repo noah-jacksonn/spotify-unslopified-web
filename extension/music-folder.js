@@ -100,7 +100,7 @@ const MusicFolder = (() => {
         try { coverFile = await (await folder.getFileHandle(artwork)).getFile(); }
         catch { /* An image may still be arriving from iCloud. */ }
       }
-      const entry = { name, count: list.songs.length };
+      const entry = { name, count: list.songs.length, sourceID: root.id };
       if (coverFile) {
         entry.coverRevision = [artwork, coverFile.size, coverFile.lastModified].join(':');
         const old = previous.find((p) => p.name === name && p.coverRevision === entry.coverRevision);

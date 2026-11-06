@@ -32,4 +32,13 @@ To import metadata, select the audio and its matching sidecar together. A valid 
 
 Cover editing preserves the original photo and an oriented preview. `cover.json` stores viewport-relative `zoom`, `x` and `y`, plus immutable `cover-original-*`, `cover-source-*` and `cover-rendered-*` filenames. Write assets before the recipe; its render is authoritative. `cover.jpg` remains a compatibility copy. iOS uses the same format.
 
-Archiving adds `Unslopified.archive.json` to the playlist folder and retains its files. Removing that marker restores the playlist. Chrome requests folder access only through explicit Connect or Reconnect actions; iCloud handles transfer timing.
+Archiving adds `Unslopified.archive.json` to the playlist folder and retains its files. Removing that marker restores the playlist. Folder handles are saved in IndexedDB, but Chrome's session-only permission can lapse after closing tabs or leaving them in the background. On restoration, choose **Allow on every visit** when Chrome offers it for persistent access. Connect and Reconnect request read/write access; explicit Refresh and playback actions can restore read access before continuing. Startup, focus, periodic scans and autosaves never open permission prompts; iCloud handles transfer timing.
+
+
+## Playlist controls
+
+Hold a Home playlist briefly and drag it to a new position. Spotify and imported playlists can be mixed; imported sidebar ordering uses the same saved local order. Alt+Up/Down also moves a focused playlist. Order changes go through the settings writer and do not rename folders or alter Spotify playlists.
+
+Imported playlists have an All songs dropdown: latest 5/10/custom count, past week/30/90 days, or custom dates. Every selection, including All songs, sorts newest first using creation timestamps with import timestamps as a fallback. Equal dates retain source order; missing dates go last. Date ranges use local calendar days, include the entire final day, and exclude unknown creation dates. Playback uses the filtered list. Selections persist per library and playlist across navigation and browser restarts; relative day ranges remain relative to today. Scrollbars are transparent throughout the extension; the Spotify profile button is hidden while Unslopified is enabled.
+
+Song date editing uses the same local calendar day as filtering; unrelated edits preserve the exact source timestamp. The obsolete Track order input is removed, while existing numeric order metadata remains intact for compatibility.

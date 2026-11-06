@@ -36,3 +36,14 @@ test('old automatic seed messages cannot choose a playlist for a new user', () =
   const empty = C.settings();
   assert.deepEqual(C.applyOperation(empty, {kind:'seed',playlist:{id,name:'End of 2026'},selected:true}), empty);
 });
+
+
+test('playlist moves are idempotent, mix imported and Spotify, and retain hidden entries', () => {
+  const a='spotify:a', b='imported:library:b', c='spotify:c', hidden='imported:library:hidden';
+  const initial=C.settings({playlistOrder:[a,hidden,b,c]});
+  const operation={kind:'playlist-order',id:c,target:a,after:false,visible:[a,b,c]};
+  const moved=C.applyOperation(initial,operation);
+  assert.deepEqual(moved.playlistOrder,[c,hidden,a,b]);
+  assert.deepEqual(C.applyOperation(moved,operation),moved);
+  assert.deepEqual(C.ordered([a,b,c,'spotify:new'],moved.playlistOrder,id=>id),[c,a,b,'spotify:new']);
+});

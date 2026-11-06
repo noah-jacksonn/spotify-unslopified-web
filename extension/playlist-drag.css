@@ -1,0 +1,8 @@
+[data-playlist-id] { position:relative; user-select:none; -webkit-user-select:none; touch-action:pan-y; }
+.playlist-dragging, .playlist-dragging * { cursor:grabbing !important; }
+.playlist-drag-source { opacity:.3; }
+.playlist-drag-ghost { position:fixed !important; z-index:99999 !important; pointer-events:none !important; margin:0 !important; opacity:.95; border-radius:18px; background:var(--sf-surface,var(--panel,#1a2230)) !important; box-shadow:0 12px 40px #0006; list-style:none; }
+.playlist-drop-before::before,.playlist-drop-after::after { content:''; position:absolute; left:0; right:0; height:2px; border-radius:2px; background:var(--sf-accent,var(--accent,#bcd7ff)); pointer-events:none; }
+.playlist-drop-before::before { top:-3px; }
+.playlist-drop-after::after { bottom:-3px; }
+@media(prefers-reduced-motion:reduce) { .playlist-drag-ghost { scale:1; } }

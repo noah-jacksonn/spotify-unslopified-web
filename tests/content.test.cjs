@@ -48,7 +48,7 @@ async function fixture(t, { saved = {home:[{id:a,name:'End of 2026',owner:'Liste
   const chip = window.document.querySelector('[aria-label="Playlists"]');
   chip.parentElement.addEventListener('click', () => chip.setAttribute('aria-checked', 'true'));
   beforeStart?.(window);
-  for (const file of ['core.js', 'control-icons.js', 'imported-artwork.js', 'imported-player-view.js', 'content.js']) window.eval(readFileSync(`extension/${file}`, 'utf8'));
+  for (const file of ['core.js', 'playlist-drag.js', 'control-icons.js', 'imported-artwork.js', 'imported-player-view.js', 'content.js']) window.eval(readFileSync(`extension/${file}`, 'utf8'));
   await new Promise(resolve => setTimeout(resolve, 10));
   t.after(() => { window.__spotifyFocused.dispose(); window.close(); });
   return { window, doc: window.document, writes, async flush() { await new Promise(resolve => setTimeout(resolve, 10)); }, get saved() { return data[C.STORAGE_KEY]; }, failWrites() { failSet = true; }, async change(state) { await window.chrome.storage.local.set({ [C.STORAGE_KEY]: { ...state, revision: (data[C.STORAGE_KEY]?.revision || 0) + 1 } }); } };
@@ -563,4 +563,17 @@ test('Create aligns with the pills without moving the native button or breaking 
   assert.equal(create.hasAttribute('data-sf-create'),false);
   assert.equal(create.closest('header').hasAttribute('data-sf-create-header'),false);
   assert.equal(create.style.getPropertyValue('--sf-create-y'),'');
+});
+
+
+test('reordering a Home playlist persists and keeps ordinary navigation intact', async t => {
+  const saved = {home:[{id:a,name:'First'},{id:b,name:'Second'}]};
+  const f = await fixture(t, {saved});
+  const first = f.doc.querySelector('.sf-home-row a');
+  first.dispatchEvent(new f.window.KeyboardEvent('keydown', {key:'ArrowDown',altKey:true,bubbles:true,cancelable:true}));
+  await f.flush();
+  assert.deepEqual([...f.doc.querySelectorAll('.sf-home-row')].map(e=>e.dataset.playlistId), ['spotify:'+b,'spotify:'+a]);
+  const reload = await fixture(t,{saved:f.saved});
+  assert.deepEqual([...reload.doc.querySelectorAll('.sf-home-row')].map(e=>e.dataset.playlistId), ['spotify:'+b,'spotify:'+a]);
+  assert.equal(reload.doc.querySelector('.sf-home-row a').getAttribute('href'), '/playlist/'+b);
 });

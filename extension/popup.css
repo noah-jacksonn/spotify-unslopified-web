@@ -23,3 +23,7 @@ p { color: #a0aba3; font-size: 12px; }
 .hint { line-height: 1.5; margin: 12px 0 0; }
 #status:empty { display: none; }
 #status { color: #f1c4a7; }
+
+/* Preserve wheel, touch and keyboard scrolling without visible chrome. */
+html, body, * { scrollbar-color:transparent transparent !important; }
+*::-webkit-scrollbar, *::-webkit-scrollbar-thumb, *::-webkit-scrollbar-track { background:transparent !important; }

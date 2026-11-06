@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Imported playlists · Spotify Unslopified</title>
     <link rel="stylesheet" href="library.css" />
+    <link rel="stylesheet" href="playlist-drag.css" />
     <link rel="stylesheet" href="tooltips.css" />
     <link rel="stylesheet" href="imported-player.css" />
   </head>
@@ -15,6 +16,7 @@
     <main>
       <p id="notice" role="status" hidden></p>
       <button id="reconnect" hidden>Reconnect folder</button>
+      <p id="folderAccessHint" class="library-hint" hidden>In Chrome’s prompt, choose “Allow on every visit” if offered to keep access between sessions.</p>
       <section id="setup" hidden>
         <h1>Your music</h1>
         <button id="setupConnect">Choose library</button>
@@ -45,17 +47,38 @@
                   ><button id="offline">Keep offline</button><button id="delete">Delete playlist</button>
                 </div>
               </details>
-            </div>
-            <details id="dates">
-              <summary>Filter by date</summary>
-              <label>From <input id="from" type="date" /></label
-              ><label>Through <input id="through" type="date" /></label><button id="clearDates">Clear</button>
+            <details id="dates" class="playlist-menu song-filter">
+              <summary aria-label="Filter songs"><span id="filterLabel">All songs</span><span aria-hidden="true">⌄</span></summary>
+              <div class="menu filter-options">
+                <button data-filter="all" aria-pressed="true">All songs</button>
+                <span class="filter-heading">Most recent</span>
+                <button data-filter="latest" data-count="5">Latest 5</button>
+                <button data-filter="latest" data-count="10">Latest 10</button>
+                <button id="customCount">Custom count…</button>
+                <span class="filter-heading">Created</span>
+                <button data-filter="days" data-count="7">Past week</button>
+                <button data-filter="days" data-count="30">Past 30 days</button>
+                <button data-filter="days" data-count="90">Past 90 days</button>
+                <button id="customDates">Custom dates…</button>
+              </div>
             </details>
+            </div>
             <ol id="songs"></ol>
           </section>
         </div>
       </section>
     </main>
+    <dialog id="filterDialog">
+      <form id="filterForm">
+        <div class="heading"><h2 id="filterTitle">Custom dates</h2><button type="button" id="closeFilter" aria-label="Close">×</button></div>
+        <label id="countField" hidden>Number of songs<input id="songCount" type="number" min="1" step="1" value="20" /></label>
+        <div id="dateFields">
+          <label>From<input id="from" type="date" /></label>
+          <label>Through<input id="through" type="date" /></label>
+        </div>
+        <div class="filter-actions"><button type="button" id="cancelFilter" class="quiet">Cancel</button><button type="submit">Apply</button></div>
+      </form>
+    </dialog>
     <dialog id="folderDialog">
       <div class="heading"><h2>Library</h2><button id="closeFolder" aria-label="Close"></button></div>
       <p id="folderName"></p>
@@ -106,8 +129,7 @@
         ><label>Source link<input id="songSource" type="url" /></label>
         <label>Lyrics or timed lyrics<textarea id="songLyrics" rows="5"></textarea></label
         ><button id="retryLyrics" type="button" class="quiet" hidden>Retry lyrics</button>
-        <label>Track order<input id="songOrder" type="number" step="any" /></label
-        ><label>Artwork<input id="songArt" type="file" accept="image/*" /></label>
+        <label>Artwork<input id="songArt" type="file" accept="image/*" /></label>
         <p class="dialogStatus" role="status" hidden></p>
       </form>
     </dialog>
@@ -126,6 +148,9 @@
       accept="image/*"
       hidden
     />
+    <script src="core.js"></script>
+    <script src="playlist-drag.js"></script>
+    <script src="song-filter.js"></script>
     <script src="music-folder.js"></script>
     <script src="imported-artwork.js"></script>
     <script src="tooltips.js"></script>

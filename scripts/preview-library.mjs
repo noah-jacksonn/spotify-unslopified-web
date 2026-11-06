@@ -15,13 +15,15 @@ const songs = [
 let connected = true;
 const MusicFolder = {
   selection:async()=>connected ? {id:'preview',handle:{name:'Unslopified Music',queryPermission:async()=>'granted'}} : null,
-  scan:async()=>[{name:'Suno',songs}],dir:async()=>null,valid:()=>true,
+  scan:async()=>[{name:'Suno',songs},{name:'Quiet hours',songs: songs.slice(0,2)},{name:'Evening',songs: songs.slice(2)}],dir:async()=>null,valid:()=>true,
   disconnect:async()=>{connected=false;},
   presentation:async()=>({gradient:await ImportedArtwork.gradient('Suno/one.m4a'),color:'#514339'}),
   update:async(root,playlist,file,changes)=>Object.assign(songs.find(song=>song.file===file),changes)
 };
 let state={sourceID:'preview',index:0,entries:songs.map(s=>({...s,playlist:'Suno'})),duration:180,position:34,playing:false,volume:0.7,shuffle:false,repeat:'off'};
-window.chrome={storage:{local:{get:async()=>({}),remove:async()=>{}}},runtime:{onMessage:{addListener(){}},sendMessage:async m=>{
+let saved={};
+window.chrome={storage:{local:{get:async()=>saved,set:async value=>Object.assign(saved,value),remove:async()=>{}}},runtime:{onMessage:{addListener(){}},sendMessage:async m=>{
+  if(m.type==='spotify-focused:update') { const next=SpotifyFocusedCore.applyOperation(saved[SpotifyFocusedCore.STORAGE_KEY],m.operation); saved[SpotifyFocusedCore.STORAGE_KEY]=next; return {ok:true,state:next}; }
   if(m.cmd) {
     const c=m.cmd;
     if(['play','resume','pause'].includes(c.action))state={...state,playing:c.action!=='pause'};

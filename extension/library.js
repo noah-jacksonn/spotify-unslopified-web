@@ -28,7 +28,7 @@
     ['closeFolder', 'close', 'Close'], ['back', 'back', 'Back to Spotify'], ['refresh', 'refresh', 'Refresh library']
   ]) icon($(id), name, label);
   icon(document.querySelector('#detail .tools summary'), 'more', 'Playlist options');
-  icon(document.querySelector('#dates summary'), 'calendar', 'Filter by date');
+
   document.addEventListener('click', event => {
     document.querySelectorAll('.playlist-menu[open]').forEach(menu => {
       if (!menu.contains(event.target)) menu.open = false;
@@ -71,6 +71,8 @@
     state,
     generation = 0,
     artworkGeneration = 0;
+  let songFilter = {kind: 'all'}, playlistOrder = [];
+  let loadedFilterKey, filterLoad = 0, filterWrites = Promise.resolve();
   let hidden = [],
     objectURLs = [];
   const current = () => lists.find((list) => list.name === active);
@@ -81,25 +83,31 @@
     return el;
   };
   const hiddenKey = () => 'importedHidden:' + root.id;
+  function showReconnect(needed) {
+    $('reconnect').hidden = !needed;
+    $('folderAccessHint').hidden = !needed;
+  }
   async function permission(write = false, source = root, request = false) {
     const descriptor = { mode: write ? 'readwrite' : 'read' };
-    if (
-      (await source.handle.queryPermission(descriptor)) !== 'granted' &&
-      (!request || (await source.handle.requestPermission(descriptor)) !== 'granted')
-    ) {
-      $('reconnect').hidden = false;
+    const status = await source.handle.queryPermission(descriptor);
+    if (status === 'granted') return false;
+    showReconnect(true);
+    if (!request || (await source.handle.requestPermission(descriptor)) !== 'granted') {
       throw Error(write ? 'Reconnect folder to allow edits.' : 'Reconnect folder to continue.');
     }
+    return true;
   }
-  function visible() {
-    const from = $('from').value,
-      to = $('through').value;
-    return (current()?.songs || []).filter((song) => {
-      if (!from && !to) return true;
-      const day = song.createdAt?.slice(0, 10);
-      return day && (!from || day >= from) && (!to || day <= to);
-    });
-  }
+  function visible() { return SongFilter.apply(current()?.songs || [], songFilter); }
+  const playlistID = list => 'imported:' + root.id + ':' + list.name;
+  PlaylistDrag.mount($('playlists'), (id, target, after, visible) => {
+    void act(async () => {
+      const result = await chrome.runtime.sendMessage({type:'spotify-focused:update', operation:{kind:'playlist-order',id,target,after,visible}});
+      if (!result?.ok) throw Error('Could not save playlist order. Try again.');
+      playlistOrder = SpotifyFocusedCore.settings(result.state).playlistOrder;
+      await render();
+      [...$('playlists').children].find(row => row.dataset.playlistId === id)?.focus({preventScroll:true});
+    })();
+  });
   async function refresh() {
     const turn = ++generation;
     const selected = await MusicFolder.selection();
@@ -111,7 +119,7 @@
     $('connect').textContent = root ? 'Change library' : 'Choose library';
     $('folderName').textContent = root?.handle.name || 'No folder connected';
     $('disconnect').hidden = !root;
-    $('reconnect').hidden = true;
+    showReconnect(false);
     if (!root) {
       lists = [];
       return;
@@ -119,13 +127,13 @@
     let catalog;
     try {
       if ((await root.handle.queryPermission({ mode: 'read' })) !== 'granted') {
-        $('reconnect').hidden = false;
-        throw Error('Folder access expired.');
+        showReconnect(true);
+        throw Error('Chrome needs permission to reopen your music folder. Reconnect or press Play to continue.');
       }
       const writable = (await root.handle.queryPermission({ mode: 'readwrite' })) === 'granted';
       catalog = await MusicFolder.scan(root);
       if (turn === generation) {
-        $('reconnect').hidden = writable;
+        showReconnect(!writable);
         report(writable ? '' : 'Reconnect folder to allow edits.', {quiet:true});
       }
     } catch (error) {
@@ -134,10 +142,12 @@
     }
     if (turn !== generation) return;
     lists = catalog;
-    const saved = await chrome.storage.local.get(hiddenKey());
+    const saved = await chrome.storage.local.get([hiddenKey(), SpotifyFocusedCore.STORAGE_KEY]);
     if (turn !== generation) return;
     hidden = saved[hiddenKey()] || [];
+    playlistOrder = SpotifyFocusedCore.settings(saved[SpotifyFocusedCore.STORAGE_KEY]).playlistOrder;
     await chrome.runtime.sendMessage({ type: 'imported:refresh' });
+    if (turn !== generation) return;
     const target = decodeURIComponent(location.hash.slice(1));
     active = lists.some((list) => list.name === target) ? target : lists[0]?.name;
     await render();
@@ -162,14 +172,17 @@
   }
   async function render() {
     const version = ++artworkGeneration;
+    if (!await restoreFilter() || version !== artworkGeneration) return;
     objectURLs.forEach(URL.revokeObjectURL);
     objectURLs = [];
     const nav = $('playlists');
     nav.replaceChildren();
-    for (const list of lists) {
+    for (const list of SpotifyFocusedCore.ordered(lists, playlistOrder, playlistID)) {
       const item = button(list.name, () => {
         location.hash = encodeURIComponent(list.name);
       });
+      item.dataset.playlistId = playlistID(list);
+      item.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown');
       item.setAttribute('aria-current', String(list.name === active));
       nav.append(item);
     }
@@ -196,7 +209,7 @@
     $('play').disabled = $('shuffle').disabled = !songs.length;
     if (!songs.length)
       ol.textContent = list.songs.length
-        ? 'No songs in this date range.'
+        ? 'No matching songs. Choose another selection or All songs.'
         : 'Drop audio files here or choose Import songs.';
     for (const song of songs) {
       const li = document.createElement('li');
@@ -229,9 +242,21 @@
     }
   }
   async function cmd(action, extra = {}) {
+    // Only a deliberate playback action may open Chrome's restore-permission
+    // prompt. Timers, focus events and background scans must stay silent.
+    const readsAudio = action === 'play' ||
+      (['resume', 'next', 'previous'].includes(action) && state?.sourceID === root?.id);
+    let restored = false, accessError;
+    if (root && readsAudio) {
+      try { restored = await permission(false, root, true); }
+      catch (error) { accessError = error; }
+    }
+    // A declined prompt must not block songs already kept offline, or an
+    // already-loaded track. Let the player try its existing local fallback.
     const result = await chrome.runtime.sendMessage({ type: 'imported:command', cmd: { action, ...extra } });
-    if (!result?.ok) throw Error(result?.error || 'Could not control playback.');
+    if (!result?.ok) throw accessError || Error(result?.error || 'Could not control playback.');
     if (result.state) display(result.state);
+    if (restored) await refresh();
   }
   function play(songs, index = 0, shuffle = false) {
     return cmd('play', {
@@ -357,11 +382,10 @@
     editing = { source: root, playlist: active, file: song.file, original: { ...song }, saving: Promise.resolve(), revision: 0 };
     $('songTitle').value = song.title;
     $('songArtist').value = song.artist;
-    $('songDate').value = song.createdAt?.slice(0, 10) || '';
+    $('songDate').value = SongFilter.day(song.createdAt);
     $('songSource').value = song.sourceURL || '';
     $('songLyrics').value = song.lyrics || '';
     $('retryLyrics').hidden = !!song.lyrics?.trim() || !/^https:\/\/suno\.com\/song\//.test(song.sourceURL || '');
-    $('songOrder').value = song.order ?? '';
     $('songArt').value = '';
     const status = $('editor').querySelector('.dialogStatus');
     status.textContent = '';
@@ -390,7 +414,10 @@
     if (new URLSearchParams(location.search).has('folder') && !$('folderDialog').open) $('folderDialog').showModal();
   }
   openFolderSettings();
-  $('refresh').onclick = act(refresh);
+  $('refresh').onclick = act(async () => {
+    if (root) await permission(false, root, true);
+    await refresh();
+  });
   $('reconnect').onclick = act(async () => {
     await permission(true, root, true);
     await refresh();
@@ -500,7 +527,7 @@
     if (event.code !== 'Space' && event.key !== ' ') return;
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.isComposing ||
         event.target.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])') ||
-        document.querySelector('#editor[open], #createDialog[open], #folderDialog[open], #coverDialog[open]')) return;
+        document.querySelector('dialog[open]')) return;
     if (!state?.entries?.[state.index] && !visible().length) return;
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -516,17 +543,16 @@
       const changes = {
         title: $('songTitle').value.trim(),
         artist: $('songArtist').value.trim() || 'Unknown artist',
-        createdAt: $('songDate').value ? $('songDate').value + 'T12:00:00Z' : null,
+        createdAt: $('songDate').value ? new Date($('songDate').value + 'T12:00:00').toISOString() : null,
         lyrics: $('songLyrics').value.trim() || null,
-        sourceURL: $('songSource').value.trim() || null,
-        order: $('songOrder').value === '' ? null : Number($('songOrder').value)
+        sourceURL: $('songSource').value.trim() || null
       };
       if (!changes.title || (changes.sourceURL && new URL(changes.sourceURL).protocol !== 'https:'))
         throw Error('Use a title and an HTTPS source link.');
-      for (const key of ['title', 'artist', 'lyrics', 'sourceURL', 'order']) {
+      for (const key of ['title', 'artist', 'lyrics', 'sourceURL']) {
         if ((original[key] ?? null) === changes[key]) delete changes[key];
       }
-      if ((original.createdAt?.slice(0, 10) || '') === $('songDate').value) delete changes.createdAt;
+      if (SongFilter.day(original.createdAt) === $('songDate').value) delete changes.createdAt;
       const artwork = $('songArt').files[0];
       if (!Object.keys(changes).length && (!artwork || artwork === session.savedArtwork)) return;
       await permission(true, source);
@@ -597,13 +623,77 @@
       startedOutside = false;
     });
   }
-  $('from').onchange = $('through').onchange = act(render);
-  $('clearDates').onclick = act(() => {
-    $('from').value = $('through').value = '';
-    return render();
+  const currentFilterKey = () => root && active ? SongFilter.storageKey(root.id, active) : null;
+  async function restoreFilter() {
+    const key = currentFilterKey();
+    if (key === loadedFilterKey) return true;
+    const request = ++filterLoad;
+    await filterWrites;
+    const saved = key ? await chrome.storage.local.get(key) : {};
+    if (request !== filterLoad || key !== currentFilterKey()) return false;
+    loadedFilterKey = key;
+    songFilter = SongFilter.restore(saved[key]);
+    paintFilter();
+    return true;
+  }
+  function paintFilter() {
+    const next = songFilter;
+    $('filterLabel').textContent = SongFilter.label(next);
+    $('dates').open = false;
+    $('dates').classList.toggle('active', next.kind !== 'all');
+    document.querySelectorAll('[data-filter]').forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.filter === next.kind && (!button.dataset.count || Number(button.dataset.count) === next.count)));
+    });
+  }
+  function selectFilter(next) {
+    const key = currentFilterKey();
+    if (!key) return;
+    ++filterLoad;
+    loadedFilterKey = key;
+    songFilter = SongFilter.restore(next);
+    paintFilter();
+    const selection = songFilter;
+    // Serialize writes so rapid changes cannot restore an older selection.
+    const saved = filterWrites.then(() => chrome.storage.local.set({[key]:selection}));
+    filterWrites = saved.catch(() => {});
+    return Promise.all([render(), saved]);
+  }
+  document.querySelectorAll('[data-filter]').forEach(button => {
+    button.onclick = act(() => selectFilter({kind:button.dataset.filter, count:Number(button.dataset.count)}));
   });
+  function openFilter(kind) {
+    const count = kind === 'latest';
+    $('through').setCustomValidity('');
+    $('dates').open = false;
+    $('countField').hidden = !count;
+    $('songCount').disabled = !count;
+    $('songCount').required = count;
+    $('dateFields').hidden = count;
+    $('from').disabled = $('through').disabled = count;
+    $('from').required = $('through').required = !count;
+    $('filterTitle').textContent = count ? 'Latest songs' : 'Custom dates';
+    if (songFilter.kind === 'latest') $('songCount').value = songFilter.count;
+    if (songFilter.kind === 'dates') { $('from').value = songFilter.from; $('through').value = songFilter.through; }
+    $('filterDialog').showModal();
+    $(count ? 'songCount' : 'from').focus();
+  }
+  $('customCount').onclick = () => openFilter('latest');
+  $('customDates').onclick = () => openFilter('dates');
+  $('closeFilter').onclick = $('cancelFilter').onclick = () => $('filterDialog').close();
+  $('from').oninput = $('through').oninput = () => $('through').setCustomValidity('');
+  $('filterForm').onsubmit = event => {
+    event.preventDefault();
+    if (!$('dateFields').hidden && $('from').value > $('through').value) {
+      $('through').setCustomValidity('Choose a date on or after From.');
+      $('through').reportValidity(); return;
+    }
+    if (!$('filterForm').reportValidity()) return;
+    const next = $('countField').hidden ? {kind:'dates',from:$('from').value,through:$('through').value}
+      : {kind:'latest',count:Number($('songCount').value)};
+    $('filterDialog').close();
+    void act(() => selectFilter(next))();
+  };
   window.onhashchange = act(async () => {
-    $('from').value = $('through').value = '';
     active = decodeURIComponent(location.hash.slice(1));
     await render();
   });

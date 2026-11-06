@@ -102,6 +102,7 @@
   }
   function importedHomeRow(list) {
     const row = el('li', 'sf-home-row');
+    row.dataset.playlistId = importedID(list);
     const open = button('', 'sf-playlist-link sf-import-link', () => openImports(list.name));
     const text = el('span', 'sf-playlist-copy');
     text.append(el('strong', '', list.name), el('span', 'sf-secondary', list.count + ' songs'));
@@ -130,6 +131,7 @@
   let lastPlaylistRead = null;
   let sidebar = null;
   let home = null;
+  let homeDrag, sidebarDrag;
   let brand = null;
   let libraryClose = null;
   let importedFilter = null;
@@ -279,6 +281,7 @@
 
   function homeRow(playlist) {
     const row = el('li', 'sf-home-row');
+    row.dataset.playlistId = 'spotify:' + playlist.id;
     const a = link('', '/playlist/' + playlist.id, 'sf-playlist-link');
     const text = el('span', 'sf-playlist-copy');
     text.append(el('strong', '', playlist.name));
@@ -303,17 +306,28 @@
     return row;
   }
 
+  const importedID = list => 'imported:' + (list.sourceID || '') + ':' + list.name;
+  function reorderPlaylist(id, target, after, visible) {
+    const inSidebar = sidebar?.contains(document.activeElement);
+    persist({kind:'playlist-order', id, target, after, visible});
+    render();
+    const row = [...(inSidebar ? sidebar : home).querySelectorAll('[data-playlist-id]')].find(row => row.dataset.playlistId === id);
+    const focus = row?.matches('a,button') ? row : row?.querySelector('a,button');
+    focus?.focus({preventScroll:true});
+  }
+
   function render() {
     if (!home || !sidebar) return;
     const page = C.route(location.pathname);
-    const key = JSON.stringify([state.home, importedHome, page, C.playlistId(location.pathname), drawerOpen]);
+    const key = JSON.stringify([state.home, state.playlistOrder, importedHome, page, C.playlistId(location.pathname), drawerOpen]);
     if (renderKey === key) return;
     renderKey = key;
     home.replaceChildren();
     sidebar.replaceChildren();
     sidebar.append(link('Home', '/home', 'sf-nav-home'));
-    for (const playlist of state.home) {
+    for (const playlist of C.ordered(state.home, state.playlistOrder, p => "spotify:" + p.id)) {
       const a = link('', '/playlist/' + playlist.id, 'sf-nav-playlist');
+      a.dataset.playlistId = 'spotify:' + playlist.id;
       a.append(cover(playlist), el('span', '', playlist.name));
       if (C.playlistId(location.pathname) === playlist.id) a.setAttribute('aria-current', 'page');
       sidebar.append(a);
@@ -326,7 +340,8 @@
     home.append(el('h1', '', 'Home'));
     if (state.home.length || importedHome.length) {
       const list = el('ul', 'sf-home-list');
-      list.append(...state.home.map(homeRow), ...importedHome.map(importedHomeRow));
+      const entries = [...state.home.map(homeRow), ...importedHome.map(importedHomeRow)];
+      list.append(...C.ordered(entries, state.playlistOrder, row => row.dataset.playlistId));
       home.append(list);
     } else {
       home.append(el('p', 'sf-empty', 'Your music, a little closer. Open All playlists and choose Show on Home.'));
@@ -473,11 +488,15 @@
       sidebar = ui('nav', 'sf-sidebar');
       sidebar.setAttribute('aria-label', 'Unslopified navigation');
       layout.append(sidebar);
+      sidebarDrag?.destroy();
+      sidebarDrag = PlaylistDrag.mount(sidebar, reorderPlaylist);
       renderKey = '';
     }
     if (!home?.isConnected || home.parentElement !== mainShell) {
       home?.remove();
       home = ui('section', 'sf-home');
+      homeDrag?.destroy();
+      homeDrag = PlaylistDrag.mount(home, reorderPlaylist);
       home.setAttribute('aria-label', 'Your music');
       mainShell.append(home);
       renderKey = '';
@@ -823,6 +842,8 @@
   function dispose() {
     if (disposed) return;
     disposed = true;
+    homeDrag?.destroy();
+    sidebarDrag?.destroy();
     clearInterval(routeTimer);
     clearTimeout(scheduled);
     clearTimeout(saveTimer);

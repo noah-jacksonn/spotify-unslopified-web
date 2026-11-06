@@ -35,6 +35,7 @@
       ],
       "js": [
         "core.js",
+        "playlist-drag.js",
         "tooltips.js",
         "control-icons.js",
         "imported-artwork.js",
@@ -43,6 +44,7 @@
       ],
       "css": [
         "content.css",
+        "playlist-drag.css",
         "tooltips.css",
         "imported-player.css"
       ],

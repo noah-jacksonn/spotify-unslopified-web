@@ -5,7 +5,7 @@ const { webcrypto } = require('node:crypto');
 const { JSDOM } = require('jsdom');
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 15));
-async function fixture(t, update) {
+async function fixture(t, update, metadata = {}) {
   const dom = new JSDOM(readFileSync('extension/library.html', 'utf8'), {
     url: 'https://example.test/library.html#Suno', runScripts: 'outside-only'
   });
@@ -17,7 +17,7 @@ async function fixture(t, update) {
   w.URL.createObjectURL = () => "blob:test";
   w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   w.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new w.Event('close')); };
-  const song = {file:'song.m4a',title:'Original',artist:'Suno',createdAt:'2026-04-19T07:26:00+08:00',sourceURL:'https://suno.com/song/example'};
+  const song = {file:'song.m4a',title:'Original',artist:'Suno',order:7,createdAt:'2026-04-19T07:26:00+08:00',sourceURL:'https://suno.com/song/example',...metadata};
   const writes = [];
   w.MusicFolder = {
     selection: async () => ({id:'library',handle:{name:'Music',queryPermission:async()=>'granted'}}),
@@ -29,7 +29,7 @@ async function fixture(t, update) {
     }
   };
   w.chrome = {storage:{local:{get:async()=>({})}},runtime:{sendMessage:async()=>({ok:true}),onMessage:{addListener(){}}}};
-  for (const file of ['control-icons.js', 'imported-artwork.js', 'imported-player-view.js', 'lyrics-view.js', 'queue-view.js', 'library.js']) w.eval(readFileSync('extension/'+file,'utf8'));
+  for (const file of ['core.js','playlist-drag.js','song-filter.js','control-icons.js', 'imported-artwork.js', 'imported-player-view.js', 'lyrics-view.js', 'queue-view.js', 'library.js']) w.eval(readFileSync('extension/'+file,'utf8'));
   await tick();
   assert.ok(doc.querySelector('[aria-label="Details for Original"]'), doc.getElementById('notice').textContent);
   doc.querySelector('[aria-label="Details for Original"]').click();
@@ -55,7 +55,27 @@ test('edits autosave without a Save button and preserve untouched timestamps and
   assert.equal(f.song.title,'New title');
   assert.deepEqual(f.writes,[{title:'New title'}]);
   assert.equal(f.song.createdAt,'2026-04-19T07:26:00+08:00');
+  assert.equal(f.song.order,7, 'Keep legacy ordering metadata when editing other details');
   assert.equal(f.doc.getElementById('editor').open,true);
+});
+
+test('the song editor and date filters agree across UTC day boundaries', async t => {
+  const previous = process.env.TZ;
+  process.env.TZ = 'Pacific/Kiritimati';
+  t.after(() => { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; });
+  const f = await fixture(t, undefined, {createdAt:'2026-11-06T12:00:00Z'});
+  assert.equal(f.doc.getElementById('songDate').value,'2026-11-07');
+  f.input('songDate','2026-11-06','change');
+  await tick();
+  assert.equal(f.song.createdAt,new Date(2026,10,6,12).toISOString());
+  const selected = f.w.SongFilter.apply([f.song],{kind:'dates',from:'2026-11-06',through:'2026-11-06'});
+  assert.equal(selected.length,1, 'A saved calendar date belongs to that same filter day');
+  f.doc.getElementById('closeEditor').click();await tick();
+  f.doc.querySelector('[aria-label="Details for Original"]').click();await tick();
+  assert.equal(f.doc.getElementById('songDate').value,'2026-11-06');
+  const timestamp = f.song.createdAt;
+  f.input('songTitle','Renamed','change');await tick();
+  assert.equal(f.song.createdAt,timestamp,'Unrelated edits preserve exact timestamps');
 });
 
 test('clicking outside flushes pending text before dismissing and refreshing the row', async t => {

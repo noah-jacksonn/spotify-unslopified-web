@@ -4,7 +4,7 @@
   "private": true,
   "description": "A quieter Spotify web player, with a Home you choose.",
   "scripts": {
-    "check": "node --check extension/queue-view.js && node --check extension/imported-player-view.js && node --check extension/lyrics-view.js && node --check extension/imported-artwork.js && node --check extension/cover-editor.js && node --check extension/suno-lyrics.js && node --check extension/tooltips.js && node --check extension/control-icons.js && node --check extension/core.js && node --check extension/store.js && node --check extension/background.js && node --check extension/content.js && node --check extension/popup.js && node --check extension/music-folder.js && node --check extension/library.js && node --check extension/local-player.js && node scripts/check.mjs",
+    "check": "node --check extension/playlist-drag.js && node --check extension/song-filter.js && node --check extension/queue-view.js && node --check extension/imported-player-view.js && node --check extension/lyrics-view.js && node --check extension/imported-artwork.js && node --check extension/cover-editor.js && node --check extension/suno-lyrics.js && node --check extension/tooltips.js && node --check extension/control-icons.js && node --check extension/core.js && node --check extension/store.js && node --check extension/background.js && node --check extension/content.js && node --check extension/popup.js && node --check extension/music-folder.js && node --check extension/library.js && node --check extension/local-player.js && node scripts/check.mjs",
     "test": "node --test tests/*.test.cjs",
     "icons": "node scripts/icons.mjs",
     "package": "node scripts/package.mjs",

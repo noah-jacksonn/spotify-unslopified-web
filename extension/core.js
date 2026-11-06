@@ -38,8 +38,18 @@
       if (playlist && !unique.has(playlist.id)) unique.set(playlist.id, playlist);
       if (unique.size >= 200) break;
     }
-    return { enabled: value?.enabled !== false, home: [...unique.values()], didChooseHome: value?.didChooseHome === true || unique.size > 0,
+    return { playlistOrder: cleanOrder(value?.playlistOrder), enabled: value?.enabled !== false, home: [...unique.values()], didChooseHome: value?.didChooseHome === true || unique.size > 0,
       revision: Number.isSafeInteger(value?.revision) && value.revision >= 0 ? value.revision : 0 };
+  }
+
+  function cleanOrder(value) {
+    return [...new Set((Array.isArray(value) ? value : []).filter(id => typeof id === 'string' && /^(spotify|imported):/.test(id) && id.length < 1000))].slice(0, 2000);
+  }
+
+  function ordered(items, order, id) {
+    const ranks = new Map(order.map((key, index) => [key, index]));
+    return items.map((item, index) => ({item, rank:ranks.get(id(item)) ?? order.length + index}))
+      .sort((a,b) => a.rank-b.rank).map(entry => entry.item);
   }
 
   // Idempotent operations can be replayed over saved state while a write is pending.
@@ -54,6 +64,16 @@
       else if (index >= 0) next.home[index] = playlist;
       else if (next.home.length < 200) next.home.push(playlist);
       next.didChooseHome = true;
+    }
+    if (operation?.kind === 'playlist-order') {
+      const visible = cleanOrder(operation.visible);
+      if (visible.includes(operation.id) && visible.includes(operation.target) && operation.id !== operation.target) {
+        const order = ordered(visible, next.playlistOrder, id => id).filter(id => id !== operation.id);
+        order.splice(order.indexOf(operation.target) + (operation.after ? 1 : 0), 0, operation.id);
+        const all = [...next.playlistOrder, ...visible.filter(id => !next.playlistOrder.includes(id))];
+        let index = 0;
+        next.playlistOrder = all.map(id => visible.includes(id) ? order[index++] : id);
+      }
     }
     if (operation?.kind === 'metadata' && Array.isArray(operation.playlists)) {
       for (const value of operation.playlists.slice(0, 200)) {
@@ -85,7 +105,7 @@
     return 'content';
   }
 
-  const api = { STORAGE_KEY, playlistId, imageUrl, cleanPlaylist, settings, applyOperation, readLibraryRow, route };
+  const api = { STORAGE_KEY, playlistId, imageUrl, cleanPlaylist, settings, applyOperation, readLibraryRow, route, ordered };
   scope.SpotifyFocusedCore = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(globalThis);
